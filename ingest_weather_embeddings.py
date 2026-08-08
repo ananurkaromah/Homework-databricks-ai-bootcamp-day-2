@@ -1,5 +1,5 @@
 """
-notebooks/ingest_weather_embeddings.py
+ingest_weather_embeddings.py
 ---------------------------------------
 Plain-Python (psycopg2-based) embedding ingestion for weather_documents.
 
@@ -29,7 +29,7 @@ Pipeline:
        DO UPDATE makes re-runs idempotent.
 
 Run directly:
-    python notebooks/ingest_weather_embeddings.py [--batch-size 500]
+    python ingest_weather_embeddings.py [--batch-size 500]
 
 Or import `run()` from a Databricks notebook cell / scheduled job.
 """
@@ -41,8 +41,9 @@ from pathlib import Path
 
 from psycopg2.extras import execute_values
 
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-from lakebase import get_connection  # noqa: E402
+# In Databricks, __file__ is not defined. Since lakebase.py is in the same directory,
+# we can import it directly without sys.path manipulation.
+from lakebase import get_connection
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -173,4 +174,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # When run in Databricks, call run() directly with default batch size
+    # For command-line usage with argparse, uncomment main() and comment the lines below
+    written = run(batch_size=500)
+    logger.info("Done. %d embedding rows written.", written)

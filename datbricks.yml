@@ -1,0 +1,49 @@
+# resources/ingest_weather_embeddings_job.yml
+#
+# Databricks Asset Bundle job resource for the weather embedding pipeline.
+# Runs ingest_weather_embeddings.py on serverless compute: chunks any
+# unembedded weather_documents rows, embeds them with
+# sentence-transformers/all-MiniLM-L6-v2, and writes vectors into
+# weather_embeddings.
+#
+# Created PAUSED — this hits NWS-derived data + Lakebase writes, so it's
+# left off until you've verified a manual run works end to end. Flip
+# pause_status to UNPAUSED (or override via a bundle target) once ready.
+#
+# Deploy / run:
+#   databricks bundle deploy -t dev
+#   databricks bundle run ingest_weather_embeddings_job -t dev
+
+resources:
+  jobs:
+    ingest_weather_embeddings_job:
+      name: ingest_weather_embeddings_job
+      description: >
+        Chunk + embed unembedded weather_documents rows into
+        weather_embeddings (sentence-transformers/all-MiniLM-L6-v2, 384-dim).
+      tags:
+        project: weather-intelligence
+
+      schedule:
+        quartz_cron_expression: "0 */30 * * * ?"   # every 30 minutes
+        timezone_id: "UTC"
+        pause_status: PAUSED
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+
+      tasks:
+        - task_key: ingest_weather_embeddings
+          spark_python_task:
+            python_file: ../ingest_weather_embeddings.py
+          environment_key: weather_ingest_env
+
+      environments:
+        - environment_key: weather_ingest_env
+          spec:
+            environment_version: "2"
+            dependencies:
+              - psycopg2-binary>=2.9
+              - sentence-transformers>=2.7
+              - databricks-sdk>=0.20
