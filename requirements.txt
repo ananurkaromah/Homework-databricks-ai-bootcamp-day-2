@@ -1,0 +1,11 @@
+# Weather Intelligence - Lakebase Vector Search Databricks App
+
+Flask>=3.0
+psycopg2-binary>=2.9
+requests>=2.31
+sentence-transformers>=2.7
+databricks-sdk>=0.20
+
+# Optional: only needed for the GET /weather/search RAG summary if you
+# want LLM-generated (rather than extractive) summaries.
+anthropic>=0.34
