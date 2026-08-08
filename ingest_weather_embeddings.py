@@ -56,7 +56,7 @@ from typing import Optional
 
 from psycopg2.extras import execute_values
 
-from lakebase import get_connection
+from lakebase import ensure_weather_schema, get_connection
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +381,12 @@ def run(
         "Batch size: %d",
         batch_size,
     )
+
+    # This job can run standalone (e.g. via the scheduled Databricks Job),
+    # independently of whether app.py has ever been started -- it must not
+    # assume the tables already exist. Idempotent: safe even if app.py's
+    # own ensure_weather_schema() call already created everything.
+    ensure_weather_schema()
 
     total_written = 0
 
