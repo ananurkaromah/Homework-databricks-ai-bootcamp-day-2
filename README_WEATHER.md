@@ -124,7 +124,7 @@ curl -X POST http://localhost:5000/weather/sync \
   -d '{"locations": ["Chicago, IL", "Austin, TX"], "limit": 50}'
 
 # 3. Chunk + embed + write vectors
-python notebooks/ingest_weather_embeddings.py
+python ingest_weather_embeddings.py
 
 # 4. Semantic search
 curl -X POST http://localhost:5000/weather/search \
@@ -153,7 +153,7 @@ nothing duplicates.
   Databricks Job / cron to re-sync alerts every N minutes. The `/weather/sync`
   endpoint is idempotent and cheap enough to call from a simple
   Databricks Jobs schedule hitting the endpoint (or invoking
-  `weather_client.harvest()` directly from a notebook task) every 10–15
+  `weather_client.harvest()` directly from a python task) every 10–15
   minutes for active alerts.
 - **HNSW benchmark not automated.** The `CREATE INDEX ... USING hnsw` vs.
   no-index latency comparison from the "extra" list is a manual `EXPLAIN

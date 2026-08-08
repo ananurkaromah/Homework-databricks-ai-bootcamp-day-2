@@ -13,7 +13,7 @@ summary) through a Flask API deployed as a Databricks App.
 |---|---|---|
 | Harvest | Resolve locations → NWS grid points → fetch active alerts + forecast discussions → normalize to a common document schema | `weather_client.py` |
 | Store | Upsert normalized documents into Lakebase (Postgres) | `lakebase.py`, `app.py` (`POST /weather/sync`) |
-| Vectorize | Chunk long text, embed with `sentence-transformers/all-MiniLM-L6-v2`, batch-write vectors | `notebooks/ingest_weather_embeddings.py` |
+| Vectorize | Chunk long text, embed with `sentence-transformers/all-MiniLM-L6-v2`, batch-write vectors | `ingest_weather_embeddings.py` |
 | Retrieve | Cosine-similarity search over embeddings via pgvector's `<=>` operator, optional LLM summary | `app.py` (`POST`/`GET /weather/search`) |
 
 For the detailed schema decisions, chunking parameters, and design
@@ -53,8 +53,7 @@ runtime by `lakebase.py`.
 ├── lakebase.py                         # Connection helper + schema (weather_documents/embeddings)
 ├── weather_client.py                   # NWS API client + document normalization
 ├── setup_secrets.py                    # One-time: store Lakebase connection URL as a Databricks secret
-├── notebooks/
-│   └── ingest_weather_embeddings.py    # Batch job: chunk, embed, write vectors
+├── ingest_weather_embeddings.py    # Batch job: chunk, embed, write vectors
 ├── requirements.txt
 ├── .env.example                        # Template for local dev env vars
 ├── .gitignore
@@ -143,8 +142,8 @@ curl -X POST https://<your-app-url>/weather/sync \
   -H "Content-Type: application/json" \
   -d '{"locations": ["Chicago, IL", "Austin, TX"], "limit": 50}'
 
-# 2. Chunk + embed + write vectors (run as a notebook/job, not part of the web app)
-python notebooks/ingest_weather_embeddings.py
+# 2. Chunk + embed + write vectors 
+python ingest_weather_embeddings.py
 
 # 3. Semantic search
 curl -X POST https://<your-app-url>/weather/search \
