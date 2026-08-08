@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d1117;
+    --panel:     #161d29;
+    --panel-2:   #1c2433;
+    --border:    #26303f;
+    --text:      #e6ebf2;
+    --muted:     #8996a8;
+    --alert:     #e2793c;
+    --alert-dim: #4a3324;
+    --forecast:  #4fb6a8;
+    --forecast-dim: #1f3f3a;
+    --danger:    #d9534f;
+  }
+
+  * { box-sizing: border-box; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+
+  .topbar {
+    border-bottom: 1px solid var(--border);
+    padding: 18px 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .topbar .mark {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+  }
+  .topbar .mark span { color: var(--forecast); }
+  .topbar .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  main {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+    display: grid;
+    gap: 24px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px;
+  }
+  .panel h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel h2 .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--forecast);
+    display: inline-block;
+  }
+  .panel .sub {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+
+  label {
+    display: block;
+    font-size: 11.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  input[type="text"], select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+  }
+  input[type="text"]:focus, select:focus, button:focus-visible {
+    outline: 2px solid var(--forecast);
+    outline-offset: 1px;
+  }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 160px; }
+  .row.tight { margin-top: 14px; }
+
+  button {
+    background: var(--forecast);
+    color: #06211d;
+    border: none;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 10px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: filter 0.15s ease;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle input { accent-color: var(--forecast); }
+
+  .status {
+    margin-top: 14px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--forecast); }
+
+  .summary-box {
+    margin-top: 18px;
+    padding: 14px 16px;
+    background: var(--panel-2);
+    border-left: 2px solid var(--forecast);
+    border-radius: 4px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+    display: none;
+  }
+  .summary-box.show { display: block; }
+  .summary-box .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: var(--forecast);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .results { margin-top: 18px; display: grid; gap: 10px; }
+
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    border-left: 3px solid var(--forecast);
+    background: var(--panel-2);
+    animation: rise 0.25s ease both;
+  }
+  .card.alert { border-left-color: var(--alert); }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .card .meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .card .source-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--forecast-dim);
+    color: var(--forecast);
+  }
+  .card.alert .source-tag { background: var(--alert-dim); color: var(--alert); }
+  .card .location {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .card .headline {
+    font-weight: 600;
+    font-size: 14.5px;
+    margin: 4px 0 6px;
+  }
+  .card .chunk {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+
+  /* Signature element: barometer-style similarity meter, ticked like an
+     analog gauge rather than a generic gradient progress bar. */
+  .meter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .meter .track {
+    position: relative;
+    flex: 1;
+    height: 6px;
+    background: var(--panel);
+    border-radius: 3px;
+    overflow: visible;
+  }
+  .meter .fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--forecast);
+  }
+  .card.alert .meter .fill { background: var(--alert); }
+  .meter .ticks {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: space-between;
+  }
+  .meter .ticks span {
+    width: 1px;
+    background: var(--bg);
+    height: 100%;
+  }
+  .meter .value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+    min-width: 42px;
+    text-align: right;
+  }
+
+  .empty {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 10px 2px;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-family: 'IBM Plex Mono', monospace;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="mark">weather<span>intel</span></div>
+  <div class="tag">api.weather.gov &rarr; lakebase &rarr; pgvector</div>
+</div>
+
+<main>
+
+  <section class="panel" id="sync-panel">
+    <h2><span class="dot"></span>Sync locations</h2>
+    <p class="sub">Pull active alerts and forecast discussions from the National Weather Service, and store them for search.</p>
+
+    <label for="locations-input">Locations (comma-separated)</label>
+    <input type="text" id="locations-input" value="Chicago, IL, Austin, TX" placeholder="Chicago, IL, Austin, TX">
+
+    <div class="row tight">
+      <div>
+        <label for="limit-input">Limit</label>
+        <input type="text" id="limit-input" value="50">
+      </div>
+      <div style="flex: 0 0 auto; align-self: flex-end;">
+        <button id="sync-btn">Sync now</button>
+      </div>
+    </div>
+
+    <div class="status" id="sync-status"></div>
+  </section>
+
+  <section class="panel" id="search-panel">
+    <h2><span class="dot"></span>Search</h2>
+    <p class="sub">Semantic search over synced documents, ranked by cosine similarity.</p>
+
+    <label for="query-input">Query</label>
+    <input type="text" id="query-input" value="risk of flooding near rivers" placeholder="e.g. risk of flooding near rivers">
+
+    <div class="row tight">
+      <div>
+        <label for="topk-input">Top K</label>
+        <input type="text" id="topk-input" value="5">
+      </div>
+      <div>
+        <label for="source-select">Source</label>
+        <select id="source-select">
+          <option value="">All sources</option>
+          <option value="alert">Alerts only</option>
+          <option value="forecast">Forecasts only</option>
+        </select>
+      </div>
+      <div style="flex: 0 0 auto; align-self: flex-end;">
+        <button id="search-btn">Search</button>
+      </div>
+    </div>
+
+    <label class="toggle">
+      <input type="checkbox" id="summary-toggle" checked>
+      Generate summary (RAG)
+    </label>
+
+    <div class="status" id="search-status"></div>
+
+    <div class="summary-box" id="summary-box">
+      <span class="label">Summary</span>
+      <span id="summary-text"></span>
+    </div>
+
+    <div class="results" id="results"></div>
+  </section>
+
+  <footer>weather-intelligence-app &middot; National Weather Service data via api.weather.gov</footer>
+
+</main>
+
+<script>
+  const syncBtn = document.getElementById('sync-btn');
+  const syncStatus = document.getElementById('sync-status');
+  const searchBtn = document.getElementById('search-btn');
+  const searchStatus = document.getElementById('search-status');
+  const resultsEl = document.getElementById('results');
+  const summaryBox = document.getElementById('summary-box');
+  const summaryText = document.getElementById('summary-text');
+
+  function setStatus(el, text, kind) {
+    el.textContent = text;
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  syncBtn.addEventListener('click', async () => {
+    const raw = document.getElementById('locations-input').value.trim();
+    const limit = parseInt(document.getElementById('limit-input').value, 10) || 50;
+
+    // "Chicago, IL, Austin, TX" -> ["Chicago, IL", "Austin, TX"]
+    const parts = raw.split(',').map(s => s.trim());
+    const locations = [];
+    for (let i = 0; i < parts.length; i += 2) {
+      if (parts[i + 1] !== undefined) locations.push(parts[i] + ', ' + parts[i + 1]);
+    }
+
+    if (locations.length === 0) {
+      setStatus(syncStatus, 'Enter at least one location as "City, ST".', 'error');
+      return;
+    }
+
+    syncBtn.disabled = true;
+    setStatus(syncStatus, 'Syncing…');
+
+    try {
+      const resp = await fetch('/weather/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locations, limit }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setStatus(syncStatus, 'Error: ' + (data.error || resp.statusText), 'error');
+      } else {
+        setStatus(syncStatus, `Synced ${data.synced} document(s) across ${locations.length} location(s).`, 'ok');
+      }
+    } catch (err) {
+      setStatus(syncStatus, 'Request failed: ' + err.message, 'error');
+    } finally {
+      syncBtn.disabled = false;
+    }
+  });
+
+  function renderResults(results) {
+    resultsEl.innerHTML = '';
+    if (!results || results.length === 0) {
+      resultsEl.innerHTML = '<div class="empty">No results. Try syncing more locations, or a broader query.</div>';
+      return;
+    }
+
+    for (const r of results) {
+      const pct = Math.max(0, Math.min(100, Math.round(r.similarity * 100)));
+      const card = document.createElement('div');
+      card.className = 'card' + (r.source_type === 'alert' ? ' alert' : '');
+      card.innerHTML = `
+        <div class="meta">
+          <span class="source-tag">${r.source_type}</span>
+          <span class="location">${r.location}</span>
+        </div>
+        <div class="headline">${r.headline || '(untitled)'}</div>
+        <div class="chunk">${r.chunk_text}</div>
+        <div class="meter">
+          <div class="track">
+            <div class="fill" style="width:${pct}%"></div>
+            <div class="ticks"><span></span><span></span><span></span><span></span><span></span></div>
+          </div>
+          <div class="value">${pct}%</div>
+        </div>
+      `;
+      resultsEl.appendChild(card);
+    }
+  }
+
+  searchBtn.addEventListener('click', async () => {
+    const query = document.getElementById('query-input').value.trim();
+    const topK = parseInt(document.getElementById('topk-input').value, 10) || 5;
+    const sourceType = document.getElementById('source-select').value;
+    const wantSummary = document.getElementById('summary-toggle').checked;
+
+    if (!query) {
+      setStatus(searchStatus, 'Enter a query.', 'error');
+      return;
+    }
+
+    searchBtn.disabled = true;
+    setStatus(searchStatus, 'Searching…');
+    summaryBox.classList.remove('show');
+
+    const params = new URLSearchParams({ query, top_k: topK });
+    if (sourceType) params.set('source_type', sourceType);
+
+    try {
+      const resp = await fetch('/weather/search?' + params.toString());
+      const data = await resp.json();
+      if (!resp.ok) {
+        setStatus(searchStatus, 'Error: ' + (data.error || resp.statusText), 'error');
+        resultsEl.innerHTML = '';
+        return;
+      }
+
+      setStatus(searchStatus, `${(data.results || []).length} result(s).`, 'ok');
+      renderResults(data.results);
+
+      if (wantSummary && data.summary) {
+        summaryText.textContent = data.summary;
+        summaryBox.classList.add('show');
+      }
+    } catch (err) {
+      setStatus(searchStatus, 'Request failed: ' + err.message, 'error');
+    } finally {
+      searchBtn.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>

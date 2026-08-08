@@ -24,7 +24,7 @@ Endpoints:
 
 import logging
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 import lakebase
 import weather_client
@@ -71,6 +71,7 @@ def index():
             "app": "weather-intelligence",
             "status": "ok",
             "endpoints": {
+                "GET /weather": "Browser UI: sync panel + semantic search",
                 "POST /weather/sync": 'Body: {"locations": [...], "limit": 50}',
                 "POST /weather/search": 'Body: {"query": "...", "top_k": 5}',
                 "GET /weather/search": "Query params: query, top_k, source_type",
@@ -82,6 +83,12 @@ def index():
 @app.route("/healthz", methods=["GET"])
 def healthz():
     return jsonify({"status": "ok"})
+
+
+@app.route("/weather", methods=["GET"])
+def weather_ui():
+    """Browser UI: sync panel + semantic search (templates/weather.html)."""
+    return render_template("weather.html")
 
 
 # ---------------------------------------------------------------------------
