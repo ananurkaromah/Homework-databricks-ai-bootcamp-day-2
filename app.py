@@ -56,6 +56,33 @@ def embed_query(text: str) -> list[float]:
     vector = model.encode([text], show_progress_bar=False, normalize_embeddings=True)[0]
     return vector.tolist()
 
+# ---------------------------------------------------------------------------
+# Root / health check
+# ---------------------------------------------------------------------------
+
+@app.route("/", methods=["GET"])
+def index():
+    """
+    Landing route so the bare app URL doesn't 404. Also doubles as a
+    lightweight health check target.
+    """
+    return jsonify(
+        {
+            "app": "weather-intelligence",
+            "status": "ok",
+            "endpoints": {
+                "POST /weather/sync": 'Body: {"locations": [...], "limit": 50}',
+                "POST /weather/search": 'Body: {"query": "...", "top_k": 5}',
+                "GET /weather/search": "Query params: query, top_k, source_type",
+            },
+        }
+    )
+
+
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    return jsonify({"status": "ok"})
+
 
 # ---------------------------------------------------------------------------
 # POST /weather/sync
