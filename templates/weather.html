@@ -18,6 +18,8 @@
     --alert-dim: #4a3324;
     --forecast:  #4fb6a8;
     --forecast-dim: #1f3f3a;
+    --discussion: #8a7fd8;
+    --discussion-dim: #2c2a4a;
     --danger:    #d9534f;
   }
 
@@ -194,6 +196,7 @@
     animation: rise 0.25s ease both;
   }
   .card.alert { border-left-color: var(--alert); }
+  .card.discussion { border-left-color: var(--discussion); }
   @keyframes rise {
     from { opacity: 0; transform: translateY(4px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -217,6 +220,7 @@
     color: var(--forecast);
   }
   .card.alert .source-tag { background: var(--alert-dim); color: var(--alert); }
+  .card.discussion .source-tag { background: var(--discussion-dim); color: var(--discussion); }
   .card .location {
     font-size: 12px;
     color: var(--muted);
@@ -255,6 +259,7 @@
     background: var(--forecast);
   }
   .card.alert .meter .fill { background: var(--alert); }
+  .card.discussion .meter .fill { background: var(--discussion); }
   .meter .ticks {
     position: absolute;
     inset: 0;
@@ -302,8 +307,8 @@
     <h2><span class="dot"></span>Sync locations</h2>
     <p class="sub">Pull active alerts and forecast discussions from the National Weather Service, and store them for search.</p>
 
-    <label for="locations-input">Locations (comma-separated)</label>
-    <input type="text" id="locations-input" value="Chicago, IL, Austin, TX" placeholder="Chicago, IL, Austin, TX">
+    <label for="locations-input">Locations (semicolon-separated)</label>
+    <input type="text" id="locations-input" value="Chicago, IL; Austin, TX" placeholder="Chicago, IL; Austin, TX">
 
     <div class="row tight">
       <div>
@@ -336,6 +341,7 @@
           <option value="">All sources</option>
           <option value="alert">Alerts only</option>
           <option value="forecast">Forecasts only</option>
+          <option value="discussion">Discussions only</option>
         </select>
       </div>
       <div style="flex: 0 0 auto; align-self: flex-end;">
@@ -380,15 +386,11 @@
     const raw = document.getElementById('locations-input').value.trim();
     const limit = parseInt(document.getElementById('limit-input').value, 10) || 50;
 
-    // "Chicago, IL, Austin, TX" -> ["Chicago, IL", "Austin, TX"]
-    const parts = raw.split(',').map(s => s.trim());
-    const locations = [];
-    for (let i = 0; i < parts.length; i += 2) {
-      if (parts[i + 1] !== undefined) locations.push(parts[i] + ', ' + parts[i + 1]);
-    }
+    // "Chicago, IL; Austin, TX" -> ["Chicago, IL", "Austin, TX"]
+    const locations = raw.split(';').map(s => s.trim()).filter(Boolean);
 
     if (locations.length === 0) {
-      setStatus(syncStatus, 'Enter at least one location as "City, ST".', 'error');
+      setStatus(syncStatus, 'Enter at least one location as "City, ST", separated by semicolons.', 'error');
       return;
     }
 
@@ -405,7 +407,14 @@
       if (!resp.ok) {
         setStatus(syncStatus, 'Error: ' + (data.error || resp.statusText), 'error');
       } else {
-        setStatus(syncStatus, `Synced ${data.synced} document(s) across ${locations.length} location(s).`, 'ok');
+        const bySource = Object.entries(data.by_source || {})
+          .map(([k, v]) => `${v} ${k}`)
+          .join(', ') || 'nothing';
+        let text = `Synced ${data.synced} document(s): ${bySource}.`;
+        if (data.skipped && data.skipped.length) {
+          text += ' Skipped: ' + data.skipped.map(s => `${s.location} (${s.reason})`).join('; ');
+        }
+        setStatus(syncStatus, text, 'ok');
       }
     } catch (err) {
       setStatus(syncStatus, 'Request failed: ' + err.message, 'error');
@@ -413,6 +422,12 @@
       syncBtn.disabled = false;
     }
   });
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : text;
+    return div.innerHTML;
+  }
 
   function renderResults(results) {
     resultsEl.innerHTML = '';
@@ -424,14 +439,15 @@
     for (const r of results) {
       const pct = Math.max(0, Math.min(100, Math.round(r.similarity * 100)));
       const card = document.createElement('div');
-      card.className = 'card' + (r.source_type === 'alert' ? ' alert' : '');
+      const sourceClass = r.source_type === 'alert' ? ' alert' : (r.source_type === 'discussion' ? ' discussion' : '');
+      card.className = 'card' + sourceClass;
       card.innerHTML = `
         <div class="meta">
-          <span class="source-tag">${r.source_type}</span>
-          <span class="location">${r.location}</span>
+          <span class="source-tag">${escapeHtml(r.source_type)}</span>
+          <span class="location">${escapeHtml(r.location)}</span>
         </div>
-        <div class="headline">${r.headline || '(untitled)'}</div>
-        <div class="chunk">${r.chunk_text}</div>
+        <div class="headline">${escapeHtml(r.headline) || '(untitled)'}</div>
+        <div class="chunk">${escapeHtml(r.chunk_text)}</div>
         <div class="meter">
           <div class="track">
             <div class="fill" style="width:${pct}%"></div>
@@ -459,11 +475,23 @@
     setStatus(searchStatus, 'Searching…');
     summaryBox.classList.remove('show');
 
-    const params = new URLSearchParams({ query, top_k: topK });
-    if (sourceType) params.set('source_type', sourceType);
-
     try {
-      const resp = await fetch('/weather/search?' + params.toString());
+      let resp;
+      if (wantSummary) {
+        // Only the GET variant with summarize=true pays for the LLM
+        // summary step server-side -- plain search uses POST instead so
+        // browsing results doesn't always cost an unwanted LLM call.
+        const params = new URLSearchParams({ query, top_k: topK, summarize: 'true' });
+        if (sourceType) params.set('source_type', sourceType);
+        resp = await fetch('/weather/search?' + params.toString());
+      } else {
+        resp = await fetch('/weather/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, top_k: topK, source_type: sourceType || null }),
+        });
+      }
+
       const data = await resp.json();
       if (!resp.ok) {
         setStatus(searchStatus, 'Error: ' + (data.error || resp.statusText), 'error');

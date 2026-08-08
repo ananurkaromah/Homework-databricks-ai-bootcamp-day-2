@@ -1,45 +1,52 @@
--- 02_setup_weather_embeddings_table.sql
+-- Setup script for the weather_embeddings table
+-- Run after 01_setup_weather_documents_table.sql (there is a foreign key).
+-- The Flask app runs equivalent DDL automatically via
+-- lakebase.ensure_weather_schema().
 --
--- Standalone copy of the weather_embeddings DDL. Requires the pgvector
--- extension (already enabled on this Lakebase instance per the project
--- brief). Same schema lakebase.py's ensure_weather_schema() creates
--- automatically — this file exists for manual inspection/setup.
---
--- Run AFTER 01_setup_weather_documents_table.sql (this table has an FK
--- into weather_documents).
+-- vector(384) matches sentence-transformers/all-MiniLM-L6-v2. If you swap
+-- models, change the dimension here to match:
+--   - sentence-transformers/all-MiniLM-L6-v2: 384
+--   - sentence-transformers/all-mpnet-base-v2: 768
+--   - BAAI/bge-small-en-v1.5: 384
+--   - BAAI/bge-base-en-v1.5: 768
+--   - BAAI/bge-large-en-v1.5: 1024
 
+-- Enable pgvector (already enabled on this Lakebase instance)
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS weather_embeddings (
-    id              BIGSERIAL PRIMARY KEY,
-    document_id     TEXT NOT NULL REFERENCES weather_documents(id) ON DELETE CASCADE,
-    chunk_index     INTEGER NOT NULL,
-    chunk_text      TEXT NOT NULL,
-    embedding       vector(384) NOT NULL,
-    model_name      TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id TEXT PRIMARY KEY,                 -- "{document_id}#{chunk_index}"
+    document_id TEXT NOT NULL
+        REFERENCES weather_documents (id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL,           -- denormalized so filtered search can
+                                          -- narrow before joining the documents
+    chunk_index INT NOT NULL,
+    chunk_text TEXT NOT NULL,
+    content_hash TEXT NOT NULL,          -- parent document's hash at embed time
+    embedding vector(384) NOT NULL,
+    model_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (document_id, chunk_index)
 );
 
-COMMENT ON TABLE weather_embeddings IS
-    'One row per chunk. embedding is 384-dim to match '
-    'sentence-transformers/all-MiniLM-L6-v2, the same model used by the '
-    'existing ticker_news embedding pipeline, so both stay dimensionally '
-    'compatible under the <=> cosine-distance convention.';
+-- HNSW index for fast approximate cosine similarity search. This is what makes
+-- `ORDER BY embedding <=> $query` an index scan instead of a full table scan.
+CREATE INDEX IF NOT EXISTS idx_weather_embeddings_embedding
+    ON weather_embeddings
+    USING hnsw (embedding vector_cosine_ops);
 
 CREATE INDEX IF NOT EXISTS idx_weather_embeddings_document_id
     ON weather_embeddings (document_id);
 
--- HNSW for fast approximate cosine-distance search via the `<=>` operator.
--- Without this index, every /weather/search call is a sequential scan.
-CREATE INDEX IF NOT EXISTS idx_weather_embeddings_hnsw
-    ON weather_embeddings
-    USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_weather_embeddings_source_type
+    ON weather_embeddings (source_type);
 
--- Fallback if this Lakebase instance's pgvector predates HNSW support
--- (added in pgvector 0.5.0). Only run this if the HNSW CREATE INDEX above
--- fails — don't create both on the same column.
--- CREATE INDEX IF NOT EXISTS idx_weather_embeddings_ivfflat
---     ON weather_embeddings
---     USING ivfflat (embedding vector_cosine_ops)
---     WITH (lists = 100);
+-- Verify the table was created
+SELECT
+    table_name,
+    column_name,
+    data_type,
+    udt_name
+FROM information_schema.columns
+WHERE table_name = 'weather_embeddings'
+ORDER BY ordinal_position;
