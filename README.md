@@ -2,7 +2,7 @@
 
 Day 2 homework for the Context Engineering on Databricks course.
 
-This project is an end-to-end unstructured-data pipeline that ingests free-text weather alerts and forecast discussions from the National Weather Service (`api.weather.gov`), embeds them into **Lakebase** (Databricks-managed Postgres) using **pgvector**, and serves semantic search (with an optional RAG summary) via a Flask API and a simple web UI deployed as a Databricks App.
+This project is an end-to-end unstructured-data pipeline that ingests free-text weather alerts and forecast discussions from the National Weather Service (`api.weather.gov`), stores them in **Lakebase** (Databricks-managed Postgres), creates vector embeddings using **pgvector**, and provides semantic search through a Flask API and web UI deployed as a Databricks App.
 
 **Databricks App name:** `weather-intelligence-app`
 
@@ -10,220 +10,443 @@ This project is an end-to-end unstructured-data pipeline that ingests free-text 
 
 ## What this is
 
-| Stage     | What happens                                                                                                               | File                                                              |
-| --------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Harvest   | Resolve locations → NWS grid points → fetch active alerts + forecast discussions → normalize into a common document schema | `weather_client.py`                                               |
-| Store     | Upsert normalized documents into Lakebase (Postgres) via `pg8000`                                                          | `lakebase.py`, `app.py` (`POST /weather/sync`)                    |
-| Vectorize | Chunk long text (800/100), embed with `sentence-transformers/all-MiniLM-L6-v2`, and batch-write vectors                    | `ingest_weather_embeddings.py`                                    |
-| Retrieve  | Cosine-similarity search over embeddings via pgvector’s `<=>` operator, with an optional LLM summary                       | `app.py` (`POST`/`GET /weather/search`), `templates/weather.html` |
-
-For schema decisions, chunking parameters, and design rationale, see [`README_WEATHER.md`](./README_WEATHER.md).
+| Stage | What happens | File |
+|---|---|---|
+| Harvest | Resolve locations → NWS grid points → fetch active alerts + forecast discussions → normalize into documents | `weather_client.py` |
+| Store | Upsert normalized documents into Lakebase | `lakebase.py`, `app.py` |
+| Vectorize | Chunk text (800/100), create embeddings with `all-MiniLM-L6-v2`, and store vectors | `ingest_weather_embeddings.py` |
+| Retrieve | Search using cosine similarity with pgvector | `app.py`, `templates/weather.html` |
 
 ---
 
 ## Architecture
 
 ```text
-NWS API (api.weather.gov)
-        │
-        │ alerts + forecast discussions
-        ▼
+NWS API
+   │
+   │ weather alerts + forecast discussions
+   ▼
 weather_client.py
-        │
-        │ normalize
-        ▼
+   │
+   │ normalize + sync
+   ▼
 weather_documents
 (Lakebase / Postgres)
-        │
-        │ chunk + embed (800/100, MiniLM-L6-v2)
-        ▼
+   │
+   │ chunk + embed
+   ▼
+ingest_weather_embeddings.py
+   │
+   │ 800 chars / 100 overlap
+   │ all-MiniLM-L6-v2
+   ▼
 weather_embeddings
-(pgvector, VECTOR(384) + HNSW)
-        │
-        │ cosine similarity <=>
-        ▼
-app.py (Flask)
-        │
-        ├── /weather/sync
-        │
-        └── /weather/search
+(pgvector, VECTOR(384))
+   │
+   │ cosine similarity
+   ▼
+app.py
+(Flask Databricks App)
+   │
+   ├── /weather/sync
+   │
+   └── /weather/search
 ```
 
-Runs as a Databricks App backed by a Lakebase Postgres instance with the `pgvector` extension enabled. Auth to Lakebase uses a dedicated `weather_app` Postgres role with **native password auth** (not OAuth), with the connection string stored securely as a Databricks secret and resolved at runtime by `lakebase.py`.
+The application runs as a **Databricks App** and uses a **Lakebase Postgres** database with the `pgvector` extension.
+
+Lakebase authentication uses the `weather_app` PostgreSQL role with native password authentication. The connection URL is stored as a Databricks secret and accessed by `lakebase.py`.
 
 ---
 
-## Project structure
+## Project Structure
 
 ```text
 .
 ├── README.md
-│   # Project overview & deployment guide (this file)
+│   └── Project overview and deployment guide
 │
 ├── README_WEATHER.md
-│   # Schema & design deep-dive (assignment write-up)
+│   └── Schema and design details
 │
 ├── app.py
-│   # Flask app: /healthz, UI, /weather/sync, /weather/search
+│   └── Flask app and API endpoints
 │
 ├── app.yml
-│   # Databricks App deployment config (command + env vars)
+│   └── Databricks App configuration
 │
 ├── databricks.yml
-│   # Databricks Asset Bundle (DAB) config
+│   └── Databricks Asset Bundle configuration
 │
 ├── ingest_weather_embeddings.py
-│   # Batch job: chunk, embed, write vectors (script & notebook)
+│   └── Python script for chunking and embedding
 │
 ├── lakebase.py
-│   # Connection helper + schema & vector queries
+│   └── Lakebase connection, schema, and vector search
 │
 ├── requirements.txt
-│   # Project dependencies (Flask, pg8000, sentence-transformers, etc.)
+│   └── Python dependencies
 │
-├── resources
+├── resources/
 │   └── ingest_weather_embeddings_job.yml
-│       # DAB job definition for scheduled workflows
+│       └── Databricks Workflow job definition
 │
 ├── setup_secret.py
-│   # One-time: store Lakebase connection URL as a Databricks secret
+│   └── One-time Lakebase secret setup
 │
-├── sql
+├── sql/
 │   ├── 01_setup_weather_documents_table.sql
-│   │   # Optional manual DDL for documents table
-│   │
 │   ├── 02_setup_weather_embeddings_table.sql
-│   │   # Optional manual DDL for embeddings table
-│   │
 │   ├── 03_report_queries.sql
-│   │   # Verification & report queries
-│   │
 │   └── README.md
-│       # SQL folder documentation
 │
-├── templates
+├── templates/
 │   └── weather.html
-│       # Web UI for sync + semantic search
+│       └── Web UI
 │
 └── weather_client.py
-    # NWS API client + document normalization logic
+    └── NWS API client and document normalization
 ```
 
 ---
 
-## Prerequisites & Setup
+## How the project is operated
 
-### 1. Create a Lakebase Instance & Native-Password Role
+**Local environment is used only for writing and updating code.**
 
-1. In your Databricks workspace, go to **Catalog** > **Lakebase** tab.
-2. Click **Create Lakebase instance**, name it (e.g., `weather-search-db`), and wait for it to run.
-3. Open the instance, go to **Roles & Databases**, and ensure **Native passwords** is enabled.
-4. Create a new role named `weather_app` using **Password** authentication and copy its connection URL:
+The application, database, synchronization, embedding job, and testing are performed in the **Databricks UI**.
 
 ```text
-postgresql://weather_app:<password>@<host>.database.cloud.databricks.com:5432/databricks_postgres?sslmode=require
+Local / GitHub
+      │
+      │ code updates
+      ▼
+Databricks Git Folder
+      │
+      ├──────────────► Databricks App
+      │
+      └──────────────► Databricks Workflow
+                           │
+                           ▼
+                      Lakebase
 ```
+
+---
+
+## Setup
+
+### 1. Create Lakebase
+
+In Databricks:
+
+1. Go to **Catalog → Lakebase**.
+2. Create a Lakebase instance.
+3. Open **Roles & Databases**.
+4. Enable **Native passwords**.
+5. Create the PostgreSQL role:
+
+```text
+weather_app
+```
+
+6. Save the Lakebase connection URL.
+
+---
 
 ### 2. Store the Lakebase Secret
 
-Run this once from a Databricks notebook in your workspace (via terminal or cell):
+Run `setup_secret.py` from the Databricks environment.
 
-**Bash**
+The connection URL is stored as:
 
-```bash
-python setup_secret.py
+```text
+database/lakebase-url
 ```
 
-This securely prompts for your Lakebase connection URL and stores it as the Databricks secret `database/lakebase-url`. (The NWS API requires no API key).
-
-### 3. Local Development Setup
-
-**Bash**
-
-```bash
-git clone <your-repo-url>
-cd weather-intelligence
-pip install -r requirements.txt
-cp .env.example .env   # (Optional) Set WEATHER_USER_AGENT for local testing
-python app.py          # Runs locally at http://localhost:8000
-```
-
-*(Note: Tables are created automatically on startup via* *`weather_db.ensure_weather_tables()`* *in* *`lakebase.py`* *if they don't exist).*
+The NWS API does not require an API key.
 
 ---
 
-## Deploying to Databricks Apps (No CLI Required)
+### 3. Create the Databricks Git Folder
 
-1. **Create a Git Folder in Databricks:**
+In Databricks:
 
-   * Go to **Workspace** > **Create** > **Git folder**, paste your repository URL, and click **Create**.
-2. **Create and Deploy the App:**
+**Workspace → Create → Git folder**
 
-   * Go to **Compute** > **Apps** > **Create app**, choose **Custom**, and point it to your Git folder.
-   * Databricks will automatically read `app.yml` for configuration and secrets.
-   * Click **Deploy**. Check the app's **Logs** tab to confirm schema initialization.
+Connect the GitHub repository containing this project.
+
+The repository contains the application code and embedding script.
 
 ---
 
-## Running the Pipeline End-to-End
+## Deploy the Databricks App
 
-**Bash**
+In Databricks:
 
-```bash
-# 1. Harvest + normalize + upsert documents into Lakebase
-curl -X POST https://<your-app-url>/weather/sync \
-  -H "Content-Type: application/json" \
-  -d '{"locations": ["Chicago, IL", "Austin, TX"], "limit": 50}'
+1. Go to **Compute → Apps**.
+2. Click **Create app**.
+3. Choose **Custom**.
+4. Select the project Git folder.
+5. Deploy the app.
+6. Check the **Logs** tab.
 
-# 2. Run the embedding job (via Databricks Workflow or locally)
-python ingest_weather_embeddings.py
+The app provides:
 
-# 3. Test semantic search
-curl -X POST https://<your-app-url>/weather/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "risk of flooding near rivers", "top_k": 5}'
-
-# 3b. Search + LLM-generated RAG summary
-curl "https://<your-app-url>/weather/search?query=risk+of+flooding+near+rivers&top_k=5"
+```text
+/healthz
+/
+/weather
+/weather/sync
+/weather/search
 ```
 
-## API Reference
+---
 
-| **Method** | **Path**          | **Body / Query Parameters**                            | **Returns**                               |
-| ---------- | ----------------- | ------------------------------------------------------ | ----------------------------------------- |
-| `GET`      | `/healthz`        | —                                                      | Health status                             |
-| `GET`      | `/` or `/weather` | —                                                      | Web UI for sync & semantic search         |
-| `POST`     | `/weather/sync`   | `{"locations": [...], "limit": 50}`                    | `{"synced": <count>, "locations": [...]}` |
-| `POST`     | `/weather/search` | `{"query": "...", "top_k": 5, "source_type": "alert"}` | `{"results": [...]}`                      |
-| `GET`      | `/weather/search` | `?query=...&top_k=5&summarize=true`                    | `{"results": [...], "summary": "..."}`    |
+# Run the Pipeline
 
-## Scheduling the Embedding Job
+## Step 1 — Sync Weather Data
 
-You can schedule `ingest_weather_embeddings.py` using **Databricks Asset Bundles (CLI)** or the **Workflows UI**:
+Open the deployed Databricks App.
 
-* **Via CLI (DAB):** **Bash**
+Use the weather sync function from the UI or call:
 
-  ```bash
-  databricks bundle deploy -t dev
-  databricks bundle run ingest_weather_embeddings_job -t dev
-  ```
+```text
+POST /weather/sync
+```
 
-* **Via Workflows UI:** Create a Job pointing to `ingest_weather_embeddings.py`, attach libraries (`pg8000`, `sentence-transformers`), set parameters, and schedule it (e.g., every 30 minutes since weather alerts expire quickly).
+Example locations:
 
-## Enabling Change Data Feed (CDF) for Postgres Tables
+```text
+Chicago, IL
+Austin, TX
+Miami, FL
+```
 
-Lakebase supports streaming row changes into Unity Catalog Delta tables:
+This creates or updates records in:
 
-1. Enable `REPLICA IDENTITY FULL` on your tables: **SQL**
+```text
+weather_documents
+```
 
-   ```sql
-   ALTER TABLE weather_documents REPLICA IDENTITY FULL;
-   ALTER TABLE weather_embeddings REPLICA IDENTITY FULL;
-   ```
+The current successful run produced:
 
-2. Go to the **Lakebase** tab in your Databricks workspace, select **Lakebase CDF**, and click **Start** to begin syncing into Unity Catalog.
+```text
+weather_documents = 36 rows
+```
+
+---
+
+## Step 2 — Create Embeddings
+
+Embedding is executed through **Databricks Workflows UI**.
+
+Go to:
+
+**Workflows → Jobs**
+
+Create a job with:
+
+```text
+Task type: Python script
+```
+
+Use:
+
+```text
+ingest_weather_embeddings.py
+```
+
+Configure the job with the required Python libraries, including:
+
+```text
+pg8000
+sentence-transformers
+```
+
+Embedding configuration:
+
+```text
+Model:
+sentence-transformers/all-MiniLM-L6-v2
+
+Chunk size:
+800
+
+Chunk overlap:
+100
+
+Batch size:
+64
+```
+
+Run the job using **Run now**.
+
+The successful run produced:
+
+```text
+weather_embeddings = 58 rows
+```
+
+---
+
+## Step 3 — Schedule the Embedding Job
+
+The embedding job can be scheduled from:
+
+**Workflows → Jobs → Add trigger → Scheduled**
+
+Example:
+
+```text
+Every 30 minutes
+```
+
+This keeps embeddings updated as weather alerts change.
+
+---
+
+## Step 4 — Test Semantic Search
+
+After embeddings have been created, test:
+
+```text
+/weather/search
+```
+
+Example query:
+
+```text
+risk of flooding near rivers
+```
+
+The search uses the vector embeddings stored in:
+
+```text
+weather_embeddings
+```
+
+and performs cosine similarity search using pgvector.
+
+---
+
+# API Reference
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/healthz` | Check application health |
+| `GET` | `/` | Open web UI |
+| `GET` | `/weather` | Open weather UI |
+| `POST` | `/weather/sync` | Sync weather data into Lakebase |
+| `POST` | `/weather/search` | Semantic search |
+| `GET` | `/weather/search` | Semantic search with optional summary |
+
+Example search request:
+
+```json
+{
+  "query": "risk of flooding near rivers",
+  "top_k": 5
+}
+```
+
+---
+
+# Verify the Data in Lakebase
+
+After synchronization:
+
+```sql
+SELECT COUNT(*) AS document_count
+FROM weather_documents;
+```
+
+After embedding:
+
+```sql
+SELECT COUNT(*) AS embedding_count
+FROM weather_embeddings;
+```
+
+Check for orphan embeddings:
+
+```sql
+SELECT COUNT(*) AS orphan_embeddings
+FROM weather_embeddings e
+LEFT JOIN weather_documents d
+    ON e.document_id = d.id
+WHERE d.id IS NULL;
+```
+
+Expected:
+
+```text
+orphan_embeddings = 0
+```
+
+---
+
+## Current Pipeline Result
+
+The current successful pipeline has:
+
+```text
+weather_documents
+        ↓
+36 documents
+        ↓
+ingest_weather_embeddings.py
+        ↓
+58 embedding rows
+        ↓
+weather_embeddings
+        ↓
+semantic search
+```
+
+---
 
 ## Technical Notes
 
-* **Driver (`pg8000`):** The app and embedding scripts use `pg8000` instead of `psycopg2` to prevent kernel crashes on Databricks Serverless compute.
-* **Singleton Model Loading:** The embedding model (`all-MiniLM-L6-v2`) is loaded once per process to optimize performance.
+- **Lakebase:** Databricks-managed PostgreSQL.
+- **pgvector:** Used for storing and searching embeddings.
+- **Embedding model:** `sentence-transformers/all-MiniLM-L6-v2`.
+- **Embedding dimension:** 384.
+- **Chunk size:** 800 characters.
+- **Chunk overlap:** 100 characters.
+- **Embedding execution:** Databricks Workflows using a Python script task.
+- **Application:** Flask running as a Databricks App.
+- **Development:** Code is written and updated locally/GitHub; execution is performed in Databricks UI.
+- **Idempotency:** Embedding ingestion uses document ID, chunk index, and content hash to avoid stale or duplicate embeddings.
+
+---
+
+## Main Workflow
+
+```text
+1. Update code locally
+        ↓
+2. Push code to GitHub
+        ↓
+3. Sync Git folder in Databricks
+        ↓
+4. Deploy/update Databricks App
+        ↓
+5. Run /weather/sync
+        ↓
+6. Check weather_documents
+        ↓
+7. Run embedding Workflow
+        ↓
+8. Check weather_embeddings
+        ↓
+9. Test /weather/search
+        ↓
+10. Schedule embedding Workflow
+```
+
+The project is intentionally operated primarily through the **Databricks UI**, while the local environment is used for code development and Git version control.
+
+**weather-intelligence-app UI`s URL:**
+**https://weather-intelligence-app-7474652369259280.aws.databricksapps.com/weather**
+
+**Data Source: National Weather Service API (api.weather.gov)**
