@@ -123,7 +123,7 @@ WEATHER_DOCUMENTS_INDEXES = [
 
 WEATHER_EMBEDDINGS_DDL = f"""
 CREATE TABLE IF NOT EXISTS weather_embeddings (
-    id              TEXT PRIMARY KEY,
+    id              BIGSERIAL PRIMARY KEY,
     document_id     TEXT NOT NULL REFERENCES weather_documents(id) ON DELETE CASCADE,
     source_type     TEXT NOT NULL,
     chunk_index     INTEGER NOT NULL,

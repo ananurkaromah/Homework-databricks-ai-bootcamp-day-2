@@ -240,19 +240,20 @@ def chunk_text(
 def fetch_unembedded_documents(cur) -> list[dict]:
     """
     Fetch weather documents that need a new/current embedding.
+
+    lakebase.get_connection() already configures the connection with
+    psycopg2.extras.RealDictCursor, so cur.fetchall() already returns
+    dict-like rows (RealDictRow, which subclasses dict) keyed by column
+    name -- there is no need to (and must not) manually zip(columns, row):
+    zip() against a dict iterates its KEYS, not its values, which silently
+    replaces every field's value with its own column name as a string.
+    That was the actual cause of the ForeignKeyViolation -- doc["id"]
+    evaluated to the literal string "id" rather than a real document id.
     """
 
     cur.execute(FETCH_UNEMBEDDED_SQL)
 
-    columns = [
-        description.name
-        for description in cur.description
-    ]
-
-    return [
-        dict(zip(columns, row))
-        for row in cur.fetchall()
-    ]
+    return [dict(row) for row in cur.fetchall()]
 
 
 # ---------------------------------------------------------------------------
