@@ -39,10 +39,8 @@ import psycopg2.extras
 logger = logging.getLogger(__name__)
 
 LAKEBASE_SECRET_SCOPE = os.environ.get("LAKEBASE_SECRET_SCOPE", "database")
-# Distinct from the lakebase-support-app's "lakebase-url" key so the two
-# apps' secrets coexist in the shared "database" scope without collision
-# (see setup_secrets.py for details).
-LAKEBASE_SECRET_KEY = os.environ.get("LAKEBASE_SECRET_KEY", "weather-lakebase-url")
+# Must match SCOPE/KEY in setup_secrets.py and app.yaml exactly.
+LAKEBASE_SECRET_KEY = os.environ.get("LAKEBASE_SECRET_KEY", "lakebase-url")
 
 # Embedding dimensionality — must match the model used in
 # notebooks/ingest_weather_embeddings.py (sentence-transformers/all-MiniLM-L6-v2 = 384)
@@ -74,6 +72,12 @@ def _resolve_database_url() -> str:
     secret = client.secrets.get_secret(
         scope=LAKEBASE_SECRET_SCOPE, key=LAKEBASE_SECRET_KEY
     )
+    # Databricks always base64-encodes `value` in the get_secret() response,
+    # regardless of how the secret was written (this is API behavior, not a
+    # convention of this project). setup_secrets.py stores the URL as plain
+    # text via put_secret(string_value=...) — do NOT base64-encode it there
+    # too, or this single decode only strips the API's own encoding and
+    # leaves the string still base64-encoded here.
     return base64.b64decode(secret.value).decode("utf-8")
 
 

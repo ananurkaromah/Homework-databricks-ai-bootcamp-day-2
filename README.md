@@ -5,7 +5,7 @@ alerts and forecast discussions from the National Weather Service,
 embeds them for semantic search, and serves retrieval (with a basic RAG
 summary) through a Flask API deployed as a Databricks App.
 
-**Databricks App name:** `weather_intelligence_app`
+**Databricks App name:** `weather-intelligence-app`
 
 ## What this is
 
@@ -53,7 +53,7 @@ runtime by `lakebase.py`.
 ├── lakebase.py                         # Connection helper + schema (weather_documents/embeddings)
 ├── weather_client.py                   # NWS API client + document normalization
 ├── setup_secrets.py                    # One-time: store Lakebase connection URL as a Databricks secret
-├── ingest_weather_embeddings.py    # Batch job: chunk, embed, write vectors
+├── ingest_weather_embeddings.py        # Batch job: chunk, embed, write vectors
 ├── requirements.txt
 ├── .env.example                        # Template for local dev env vars
 ├── .gitignore
